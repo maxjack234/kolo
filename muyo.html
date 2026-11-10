@@ -1,0 +1,323 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beach Buggy Grand Prix</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#081522;color:white;
+ font-family:Arial,sans-serif;text-align:center;
+}
+h1{color:#ffdc42;text-shadow:0 0 15px #ff8c00;margin:12px}
+.hud{
+ display:flex;justify-content:center;gap:25px;
+ flex-wrap:wrap;padding:10px;font-weight:bold;
+}
+.game{
+ width:min(960px,98vw);margin:auto;
+ border:3px solid #ffc83d;border-radius:15px;
+ overflow:hidden;background:#1689a0;
+}
+canvas{display:block;width:100%;height:auto}
+button{
+ border:0;border-radius:10px;padding:13px 25px;
+ background:#ffbd22;color:#171717;font-weight:bold;
+ font-size:17px;margin:12px;cursor:pointer;
+}
+button:active{transform:scale(.96)}
+#message{font-size:20px;color:#ffdf55;font-weight:bold;min-height:28px}
+.controls{color:#ddd;font-size:14px;padding:8px}
+</style>
+</head>
+<body>
+<h1>🏝️ BEACH BUGGY GRAND PRIX 🏁</h1>
+
+<div class="hud">
+ <span>🏎️ SPEED: <b id="speed">0</b> km/h</span>
+ <span>🏁 LAP: <b id="lap">1 / 4</b></span>
+ <span>⭐ POSITION: <b id="position">2nd</b></span>
+ <span>🤖 COMPUTER: <b id="ai">0</b> km/h</span>
+</div>
+
+<div class="game">
+<canvas id="game" width="960" height="620"></canvas>
+</div>
+
+<div id="message">Ready for the beach race?</div>
+<button onclick="startRace()">🏁 START 4-LAP RACE</button>
+<button onclick="resetRace()">↻ RESET</button>
+<div class="controls">
+<b>CONTROLS:</b> W / ↑ Accelerate · S / ↓ Brake · A / ← Steer left · D / → Steer right
+<br>Use SHIFT for turbo boost! Avoid the edges and beat the computer!
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const W=960,H=620;
+const cx=480,cy=310,rx=335,ry=225;
+const roadWidth=100;
+const TAU=Math.PI*2;
+
+let keys={};
+let running=false,finished=false,last=0;
+let countdown=0;
+let particles=[];
+let boosts=[];
+let trees=[];
+let player,computer;
+
+function makeCar(color,name){
+ return {
+  progress:0,offset:0,speed:0,color,name,
+  boost:0,finished:false
+ };
+}
+function resetRace(){
+ player=makeCar("#ef3340","YOU");
+ computer=makeCar("#ffdf29","COMPUTER");
+ player.progress=0;
+ computer.progress=0;
+ running=false;finished=false;
+ particles=[];boosts=[];
+ for(let i=0;i<8;i++){
+  boosts.push({angle:i*TAU/8+.5,used:false});
+ }
+ document.getElementById("message").textContent="Ready for the beach race?";
+ updateHUD();
+ draw();
+}
+function startRace(){
+ resetRace();
+ countdown=3;
+ document.getElementById("message").textContent="3...";
+ const timer=setInterval(()=>{
+  if(countdown>1){
+   countdown--;
+   document.getElementById("message").textContent=countdown+"...";
+  }else{
+   clearInterval(timer);
+   document.getElementById("message").textContent="GO! GO! GO!";
+   running=true;
+   last=performance.now();
+   requestAnimationFrame(loop);
+  }
+ },750);
+}
+function pointAt(t,offset=0){
+ let x=cx+rx*Math.cos(t);
+ let y=cy+ry*Math.sin(t);
+ let nx=Math.cos(t)/rx,ny=Math.sin(t)/ry;
+ let len=Math.hypot(nx,ny);
+ nx/=len;ny/=len;
+ return {x:x+nx*offset,y:y+ny*offset,
+ angle:Math.atan2(ry*Math.cos(t),-rx*Math.sin(t))};
+}
+function roundedRect(x,y,w,h,r){
+ ctx.beginPath();
+ ctx.roundRect(x,y,w,h,r);
+ ctx.fill();
+}
+function drawCar(car){
+ const p=pointAt(car.progress,car.offset);
+ ctx.save();
+ ctx.translate(p.x,p.y);
+ ctx.rotate(p.angle);
+ // Shadow
+ ctx.fillStyle="#0008";
+ ctx.beginPath();ctx.ellipse(2,6,20,12,0,0,TAU);ctx.fill();
+ // Wheels
+ ctx.fillStyle="#171717";
+ roundedRect(-16,-13,10,8,3);
+ roundedRect(8,-13,10,8,3);
+ roundedRect(-16,6,10,8,3);
+ roundedRect(8,6,10,8,3);
+ // Body
+ ctx.fillStyle=car.color;
+ roundedRect(-22,-12,44,24,8);
+ // Windscreen
+ ctx.fillStyle="#8deaff";
+ roundedRect(-9,-9,19,18,5);
+ // Bonnet
+ ctx.fillStyle="#ffffff";
+ roundedRect(12,-7,7,14,3);
+ // Headlights
+ ctx.fillStyle="#fff6a0";
+ ctx.fillRect(18,-9,4,5);
+ ctx.fillRect(18,4,4,5);
+ // Number
+ ctx.fillStyle="#151515";
+ ctx.font="bold 9px Arial";
+ ctx.textAlign="center";
+ ctx.fillText(car===player?"1":"2",-3,4);
+ ctx.restore();
+}
+function drawTree(x,y,s=1){
+ ctx.fillStyle="#79502a";
+ ctx.fillRect(x-5*s,y,10*s,25*s);
+ ctx.fillStyle="#126c37";
+ for(let i=0;i<5;i++){
+  ctx.beginPath();
+  ctx.ellipse(x+Math.cos(i*1.25)*17*s,
+  y+Math.sin(i*1.25)*9*s-8*s,
+  22*s,9*s,i*.6,0,TAU);
+  ctx.fill();
+ }
+ ctx.fillStyle="#39a64c";
+ ctx.beginPath();ctx.arc(x,y-10*s,13*s,0,TAU);ctx.fill();
+}
+function drawBackground(){
+ ctx.fillStyle="#13a5bd";
+ ctx.fillRect(0,0,W,H);
+ // Ocean waves
+ ctx.strokeStyle="#8ce9e8";
+ ctx.lineWidth=3;
+ for(let i=0;i<9;i++){
+  ctx.beginPath();
+  ctx.ellipse(480,310,445+i*20,295+i*15,0,0,TAU);
+  ctx.stroke();
+ }
+ // Sand island
+ ctx.fillStyle="#eacb77";
+ ctx.beginPath();
+ ctx.ellipse(cx,cy,440,310,0,0,TAU);ctx.fill();
+ // beach details
+ for(let i=0;i<65;i++){
+  let x=(i*157)%W,y=(i*97)%H;
+  if(Math.hypot((x-cx)/440,(y-cy)/310)<1){
+   ctx.fillStyle=i%2?"#d5b66c":"#f5dfa0";
+   ctx.fillRect(x,y,3,3);
+  }
+ }
+}
+function drawTrack(){
+ // Outer edge
+ ctx.beginPath();ctx.ellipse(cx,cy,rx+roadWidth/2,ry+roadWidth/2,0,0,TAU);
+ ctx.fillStyle="#806044";ctx.fill();
+ // Asphalt
+ ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,TAU);
+ ctx.lineWidth=roadWidth;ctx.strokeStyle="#52565a";ctx.stroke();
+ // Inner and outer road markings
+ ctx.beginPath();ctx.ellipse(cx,cy,rx+roadWidth/2,ry+roadWidth/2,0,0,TAU);
+ ctx.lineWidth=5;ctx.strokeStyle="#fff1cb";ctx.stroke();
+ ctx.beginPath();ctx.ellipse(cx,cy,rx-roadWidth/2,ry-roadWidth/2,0,0,TAU);
+ ctx.lineWidth=5;ctx.strokeStyle="#fff1cb";ctx.stroke();
+ // Dashed center line
+ ctx.setLineDash([22,18]);
+ ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,TAU);
+ ctx.lineWidth=3;ctx.strokeStyle="#ffe5a2";ctx.stroke();
+ ctx.setLineDash([]);
+ // Finish line at top
+ let f=pointAt(-Math.PI/2);
+ ctx.save();ctx.translate(f.x,f.y);ctx.rotate(0);
+ for(let i=0;i<8;i++){
+  ctx.fillStyle=i%2?"#171717":"#fff";
+  ctx.fillRect(-42+i*11,-9,11,18);
+ }
+ ctx.restore();
+ // Boost pads
+ boosts.forEach(b=>{
+  if(!b.used){
+   const p=pointAt(b.angle,0);
+   ctx.save();ctx.translate(p.x,p.y);
+   ctx.fillStyle="#00eeff";
+   ctx.shadowColor="#00eeff";ctx.shadowBlur=18;
+   ctx.beginPath();ctx.arc(0,0,11,0,TAU);ctx.fill();
+   ctx.fillStyle="#fff";ctx.font="bold 14px Arial";
+   ctx.textAlign="center";ctx.fillText("⚡",0,5);
+   ctx.restore();
+  }
+ });
+}
+function drawScenery(){
+ // Palm trees around the beach
+ for(let i=0;i<22;i++){
+  let a=i*TAU/22;
+  let x=cx+Math.cos(a)*(rx+105);
+  let y=cy+Math.sin(a)*(ry+100);
+  drawTree(x,y,.8+(i%3)*.15);
+ }
+}
+function draw(){
+ drawBackground();
+ drawScenery();
+ drawTrack();
+ drawCar(computer);
+ drawCar(player);
+ // Labels
+ [player,computer].forEach(c=>{
+  const p=pointAt(c.progress,c.offset);
+  ctx.fillStyle="#fff";
+  ctx.font="bold 12px Arial";
+  ctx.textAlign="center";
+  ctx.fillText(c.name,p.x,p.y-24);
+ });
+}
+function updateHUD(){
+ document.getElementById("speed").textContent=Math.round(player.speed);
+ document.getElementById("ai").textContent=Math.round(computer.speed);
+ document.getElementById("lap").textContent=
+ Math.min(4,Math.floor(player.progress/TAU)+1)+" / 4";
+ const place=player.progress>=computer.progress?"1st":"2nd";
+ document.getElementById("position").textContent=place;
+}
+function finish(winner){
+ running=false;finished=true;
+ document.getElementById("message").textContent=
+ winner+"! 🏆 RACE FINISHED!";
+}
+function loop(now){
+ if(!running)return;
+ let dt=Math.min((now-last)/16.67,2);
+ last=now;
+ let accel=keys["arrowup"]||keys["w"];
+ let brake=keys["arrowdown"]||keys["s"];
+ let left=keys["arrowleft"]||keys["a"];
+ let right=keys["arrowright"]||keys["d"];
+ let turbo=keys["shift"];
+
+ player.speed+=accel?1.0*dt:-.22*dt;
+ if(brake)player.speed-=1.7*dt;
+ if(turbo&&player.boost>0){
+  player.speed+=.9*dt;player.boost-=dt;
+ }
+ player.speed=Math.max(0,Math.min(235,player.speed));
+ if(left)player.offset-=2.8*dt;
+ if(right)player.offset+=2.8*dt;
+ player.offset*=Math.pow(.995,dt);
+ player.offset=Math.max(-45,Math.min(45,player.offset));
+ // Penalty for leaving the road
+ if(Math.abs(player.offset)>40)player.speed*=.98;
+ // AI adapts its pace and changes lanes
+ let target=168+Math.sin(now/1700)*16;
+ if(computer.progress<player.progress)target+=10;
+ computer.speed+=(target-computer.speed)*.018*dt;
+ computer.offset=Math.sin(now/850)*24;
+ // Progress around the circuit
+ let circumference=2*Math.PI*Math.sqrt((rx*rx+ry*ry)/2);
+ player.progress+=player.speed*dt/(circumference*.11);
+ computer.progress+=computer.speed*dt/(circumference*.11);
+ // Collect a turbo boost
+ boosts.forEach(b=>{
+  if(!b.used&&Math.abs(player.progress%TAU-b.angle)<.035){
+   b.used=true;player.boost=150;
+   document.getElementById("message").textContent="⚡ TURBO BOOST!";
+  }
+ });
+ if(player.progress>=TAU*4){finish("YOU WIN");}
+ else if(computer.progress>=TAU*4){finish("COMPUTER WINS");}
+ draw();updateHUD();
+ if(running)requestAnimationFrame(loop);
+}
+document.addEventListener("keydown",e=>{
+ keys[e.key.toLowerCase()]=true;
+ if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(e.key.toLowerCase()))e.preventDefault();
+});
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+resetRace();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2 Player Battle Arena</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#090d1b;color:white;
+ font-family:Arial;text-align:center;
+}
+h1{color:#00eaff;text-shadow:0 0 15px #00eaff}
+#score{font-size:25px;margin:12px}
+.arena{
+ width:min(900px,96vw);height:430px;margin:15px auto;
+ position:relative;overflow:hidden;
+ border:3px solid #00eaff;border-radius:15px;
+ background:linear-gradient(#182c54 0%,#253a58 65%,#151b2c 65%);
+ box-shadow:0 0 25px #00eaff55;
+}
+.arena:after{
+ content:"";position:absolute;bottom:0;width:100%;height:35%;
+ background:repeating-linear-gradient(90deg,#202a3d 0 40px,#26334b 40px 80px);
+ border-top:4px solid #00eaff;
+}
+.player{
+ position:absolute;bottom:35%;width:48px;height:75px;
+ border-radius:15px 15px 8px 8px;z-index:2;
+ transition:left .06s, bottom .06s;
+}
+.player:before{
+ content:"";position:absolute;top:-27px;left:7px;
+ width:34px;height:34px;border-radius:50%;background:#f1c49c;
+}
+.player:after{
+ content:"";position:absolute;top:22px;left:8px;
+ width:32px;height:12px;background:#111;border-radius:5px;
+}
+#p1{left:15%;background:#00d9ff;box-shadow:0 0 15px #00d9ff}
+#p2{left:80%;background:#ff3b67;box-shadow:0 0 15px #ff3b67}
+.bullet{
+ position:absolute;width:18px;height:8px;border-radius:8px;
+ z-index:4;box-shadow:0 0 12px currentColor;
+}
+#message{
+ position:absolute;top:35%;width:100%;z-index:6;
+ font-size:30px;font-weight:bold;text-shadow:0 0 12px black;
+}
+.controls{
+ display:flex;justify-content:center;gap:25px;flex-wrap:wrap;
+}
+.card{background:#151d32;padding:15px;border-radius:12px;min-width:220px}
+.blue{color:#00d9ff}.red{color:#ff3b67}
+button{
+ padding:12px 25px;border:0;border-radius:9px;
+ background:#00d9ff;color:#07101e;font-weight:bold;
+ cursor:pointer;font-size:16px;margin:12px;
+}
+</style>
+</head>
+<body>
+<h1>⚔️ BATTLE ARENA</h1>
+<div id="score"><span class="blue">PLAYER 1: <b id="s1">0</b></span>
+ &nbsp; | &nbsp;
+ <span class="red">PLAYER 2: <b id="s2">0</b></span></div>
+
+<div class="arena" id="arena">
+ <div id="message">READY? FIGHT!</div>
+ <div class="player" id="p1"></div>
+ <div class="player" id="p2"></div>
+</div>
+
+<div class="controls">
+ <div class="card">
+  <h3 class="blue">PLAYER 1</h3>
+  W = Jump<br>A = Move left<br>D = Move right<br>F = Shoot
+ </div>
+ <div class="card">
+  <h3 class="red">PLAYER 2</h3>
+  ↑ = Jump<br>← = Move left<br>→ = Move right<br>Enter = Shoot
+ </div>
+</div>
+<button onclick="restart()">RESTART GAME</button>
+<p>First player to score 5 hits wins! 🏆</p>
+
+<script>
+const arena=document.getElementById("arena");
+const players=[
+ {el:document.getElementById("p1"),x:15,y:0,dir:1,score:0,keys:{left:"a",right:"d",jump:"w",shoot:"f"},cool:0},
+ {el:document.getElementById("p2"),x:80,y:0,dir:-1,score:0,keys:{left:"arrowleft",right:"arrowright",jump:"arrowup",shoot:"enter"},cool:0}
+];
+let keys={},bullets=[],running=true,last=0;
+const width=100;
+function update(){
+ if(!running)return;
+ players.forEach((p,i)=>{
+  if(keys[p.keys.left])p.x-=0.55;
+  if(keys[p.keys.right])p.x+=0.55;
+  p.x=Math.max(2,Math.min(92,p.x));
+  if(keys[p.keys.jump]&&p.y===0)p.vy=10;
+  if(p.vy!==undefined){
+   p.y+=p.vy;p.vy-=0.45;
+   if(p.y<=0){p.y=0;p.vy=undefined}
+  }
+  p.dir=i===0?1:-1;
+  p.el.style.left=p.x+"%";
+  p.el.style.bottom=`calc(35% + ${p.y}px)`;
+  if(p.cool>0)p.cool--;
+  if(keys[p.keys.shoot]&&p.cool===0){
+   shoot(p);p.cool=35;
+  }
+ });
+ bullets.forEach((b,i)=>{
+  b.x+=b.speed;
+  b.el.style.left=b.x+"%";
+  if(b.x<0||b.x>100){b.el.remove();bullets.splice(i,1);return}
+  const target=players[b.owner===0?1:0];
+  if(Math.abs(b.x-target.x-2)<4 && Math.abs(b.y-target.y)<65){
+   target.score++;
+   document.getElementById("s"+(b.owner===0?1:2)).textContent=players[b.owner].score;
+   b.el.remove();bullets.splice(i,1);
+   if(players[b.owner].score>=5){
+    running=false;
+    document.getElementById("message").textContent="🏆 PLAYER "+(b.owner+1)+" WINS!";
+   }
+  }
+ });
+ requestAnimationFrame(update);
+}
+function shoot(p){
+ const el=document.createElement("div");
+ el.className="bullet";
+ el.style.background=p===players[0]?"#00eaff":"#ff3b67";
+ el.style.color=el.style.background;
+ arena.appendChild(el);
+ const b={el,x:p.x+(p===players[0]?5:-2),y:p.y+45,
+ speed:p===players[0]?1.3:-1.3,owner:players.indexOf(p)};
+ el.style.top=`${arena.clientHeight-(b.y+120)}px`;
+ bullets.push(b);
+}
+document.addEventListener("keydown",e=>{
+ const k=e.key.toLowerCase();
+ if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k))e.preventDefault();
+ keys[k]=true;
+});
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+function restart(){
+ bullets.forEach(b=>b.el.remove());bullets=[];
+ players.forEach((p,i)=>{
+  p.x=i===0?15:80;p.y=0;p.vy=undefined;p.score=0;p.cool=0;
+ });
+ document.getElementById("s1").textContent="0";
+ document.getElementById("s2").textContent="0";
+ document.getElementById("message").textContent="READY? FIGHT!";
+ running=true;
+}
+update();
+</script>
+</body>
+</html>
